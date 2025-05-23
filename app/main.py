@@ -4,7 +4,7 @@ from fastapi_login import LoginManager
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from jinja2 import TemplateNotFound  # ← 예외 캐치용
-
+#커밋이 안돼요ㅜㅠ
 SECRET = "your_secret_key_here"
 app = FastAPI()
 
