@@ -1,90 +1,85 @@
 from fastapi import FastAPI, Request, Form, Depends, Response, HTTPException
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi_login import LoginManager
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
-from jinja2 import TemplateNotFound  # ← 예외 캐치용
-#커밋이 안돼요ㅜㅠ
-SECRET = "your_secret_key_here"
+import os
+
+# 시크릿 키 (토큰 서명 등에 사용됨)
+SECRET_KEY = os.environ.get("SECRET_KEY")
 app = FastAPI()
 
-manager = LoginManager(SECRET, token_url="/login", use_cookie=True)
-manager.cookie_name = "auth_token"
+# 로그인 매니저 설정 (쿠키 기반 인증 사용)
+manager = LoginManager(SECRET_KEY, tokenUrl="/login", use_cookie=True)
+manager.cookie_name = "auth_token"  # 쿠키 이름 설정
 
-# ────────────────────────────────────────────
-# templates 디렉토리가 없어도 절대경로 지정
-# ────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+# 템플릿 디렉토리 설정 (Jinja2 사용)
+templates = Jinja2Templates(directory="templates")
 
+# 임시 사용자 저장소 (실제 서비스에서는 DB 사용 필요)
 users = {"testuser": {"username": "testuser", "password": "password123"}}
 
+# 사용자 정보를 불러오는 함수 (LoginManager에 필요)
 @manager.user_loader
 def load_user(username: str):
-    return users.get(username)
+    user = users.get(username)
+    return user
 
-# ────────────────────────────────────────────
-# 템플릿 안전 호출 헬퍼
-# ────────────────────────────────────────────
-def safe_template(name: str, request: Request, **ctx):
-    try:
-        return templates.TemplateResponse(name, {"request": request, **ctx})
-    except TemplateNotFound:
-        # 템플릿 없으면 즉석에서 기본 HTML 반환
-        body = f"""
-        <html>
-          <head><title>{name}</title></head>
-          <body>
-            <h1>{ctx.get('msg', 'Checkable')}</h1>
-            <p>'{name}' 템플릿이 아직 준비되지 않았습니다.<br>
-               templates/{name} 파일을 만들면 자동으로 교체됩니다.</p>
-          </body>
-        </html>
-        """
-        return HTMLResponse(content=body, status_code=200)
-
-# ────────────────────────────────────────────
-# 라우트
-# ────────────────────────────────────────────
+# 홈 페이지
 @app.get("/")
 async def home(request: Request):
-    return safe_template("index.html", request)
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/signup")
+# 회원가입 페이지 (GET 요청)
+@app.get("/signup") 
 async def signup_page(request: Request):
-    return safe_template("signup.html", request)
+    return templates.TemplateResponse("signup.html", {"request": request})
 
+# 회원가입 처리 (POST 요청)
 @app.post("/signup")
 async def signup(request: Request, username: str = Form(...), password: str = Form(...)):
     if username in users:
-        return safe_template("signup.html", request, msg="이미 존재하는 사용자입니다.")
+        # 이미 존재하는 사용자일 경우 에러 메시지 반환
+        return templates.TemplateResponse("signup.html", {"request": request, "msg": "이미 존재하는 사용자입니다."})
+    
+    # 새로운 사용자 등록
     users[username] = {"username": username, "password": password}
+    
+    # 로그인 페이지로 리다이렉트
     return RedirectResponse(url="/login", status_code=302)
 
+# 로그인 페이지 (GET 요청)
 @app.get("/login")
 async def login_page(request: Request):
-    return safe_template("login.html", request)
+    return templates.TemplateResponse("login.html", {"request": request})
 
+# 로그인 처리 (POST 요청)
 @app.post("/login")
-async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login(request: Request, response: Response, username: str = Form(...), password: str = Form(...)):
     user = load_user(username)
-    if not user or user["password"] != password:
-        return safe_template("login.html", request, msg="잘못된 사용자명 또는 비밀번호입니다.")
+    # 사용자 존재 여부와 비밀번호 확인
+    if not user or user.get("password") != password:
+        return templates.TemplateResponse("login.html", {"request": request, "msg": "잘못된 사용자명 또는 비밀번호입니다."})
+    
+    # 토큰 생성 및 쿠키에 저장
     access_token = manager.create_access_token(data={"sub": username})
-    redirect = RedirectResponse(url="/dashboard", status_code=302)
-    manager.set_cookie(redirect, access_token)
-    return redirect
+    manager.set_cookie(response, access_token)
+    
+    # 대시보드로 리다이렉트
+    return RedirectResponse(url="/dashboard", status_code=302)
 
+# 로그인 후 대시보드 페이지
 @app.get("/dashboard")
 async def dashboard(request: Request, user=Depends(manager)):
-    return safe_template("dashboard.html", request, user=user)
+    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
 
+# 로그아웃 처리
 @app.get("/logout")
-def logout():
+def logout(response: Response):
     response = RedirectResponse(url="/")
-    response.delete_cookie(manager.cookie_name)
+    response.delete_cookie(manager.cookie_name)  # 쿠키 삭제
     return response
 
+# 개발 서버 실행 (직접 실행할 경우)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
