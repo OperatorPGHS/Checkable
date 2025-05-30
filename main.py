@@ -3,9 +3,16 @@ from fastapi.responses import RedirectResponse
 from fastapi_login import LoginManager
 from fastapi.templating import Jinja2Templates
 import os
+from dotenv import load_dotenv
 
+
+load_dotenv()
 # 시크릿 키 (토큰 서명 등에 사용됨)
 SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    # SECRET_KEY가 없으면 앱이 시작되지 않도록 명확한 에러를 발생시킵니다.
+    raise HTTPException(status_code=500, detail="SECRET_KEY environment variable not set. Please set it in .env file or environment.")
+
 app = FastAPI()
 
 # 로그인 매니저 설정 (쿠키 기반 인증 사용)
