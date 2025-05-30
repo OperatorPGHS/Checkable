@@ -3,9 +3,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-
+import datetime
 from database import SessionLocal
-from models import Base, Student,WeekdayEnum
+from models import Base, PeriodEnum, Student,WeekdayEnum,Attendance
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -78,9 +78,66 @@ def login(
         return res
 
     return HTMLResponse("<h3>비밀번호가 틀렸습니다.</h3>", status_code=401)
+@app.post("/attendance/{period_num}")
+def mark_attendance(
+    period_num: int,
+    day: str = Form(...),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    student_number = request.cookies.get("student_number")
+    if not student_number:
+        return RedirectResponse("/login", status_code=302)
 
-# 홈
+    # 차시 처리
+    if period_num == 1:
+        period = PeriodEnum.first
+    elif period_num == 2:
+        period = PeriodEnum.second
+    else:
+        return HTMLResponse("<h3>잘못된 차시입니다.</h3>", status_code=400)
+
+    # 학생 조회
+    student = db.query(Student).filter_by(student_number=student_number, day=day).first()
+    if not student:
+        return HTMLResponse("<h3>해당 요일에 등록된 학생 정보가 없습니다.</h3>", status_code=400)
+
+    # 출석 중복 체크
+    today = datetime.date.today()
+    exists = db.query(Attendance).filter_by(
+        student_id=student.id,
+        day=day,
+        period=period,
+        date=today
+    ).first()
+
+    if exists:
+        return HTMLResponse(f"<h3>{period.value} 출석은 이미 완료되었습니다!</h3>")
+
+    # 출석 저장
+    attendance = Attendance(
+        student_id=student.id,
+        day=day,
+        period=period,
+        date=today
+    )
+    db.add(attendance)
+    db.commit()
+
+    return HTMLResponse(f"<h3>{period.value} 출석 완료!</h3>")
+
 @app.get("/")
 def home(request: Request):
-    name = request.cookies.get("student_number")
-    return templates.TemplateResponse("index.html", {"request": request, "name": name})
+    student_number = request.cookies.get("student_number")
+    if not student_number:
+        return RedirectResponse("/login", status_code=302)
+
+    weekday_map = ["월", "화", "수", "목", "금", "토", "일"]
+    today = datetime.date.today()
+    today_weekday = weekday_map[today.weekday()]  # 0 = 월, 1 = 화 ...
+
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "student_number": student_number,
+        "today_weekday": today_weekday
+    })

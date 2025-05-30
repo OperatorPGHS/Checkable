@@ -1,8 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head><title>환영합니다</title></head>
-<body>
-<h2>{{ name }}님, 환영합니다!</h2>
-<a href="/logout">로그아웃</a>
-</body>
-</html>
+<h2>{{ student_number }}님, 야자 출석 체크</h2>
+
+<form method="post" action="/attendance/1">
+  <input type="hidden" name="day" value="{{ today_weekday }}">
+  <button type="submit">✅ 1차시 출석</button>
+</form>
+
+<form method="post" action="/attendance/2">
+  <input type="hidden" name="day" value="{{ today_weekday }}">
+  <button type="submit">✅ 2차시 출석</button>
+</form>
