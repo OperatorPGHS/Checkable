@@ -8,8 +8,7 @@ MYSQL_PASSWORD = "1324"
 MYSQL_HOST = "svc.sel4.cloudtype.app"
 MYSQL_PORT = "30270"
 MYSQL_DB = "checkable"
-
-DATABASE_URL = f"mysql+mysqldb://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
+DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
 
 # SQLAlchemy 설정
 engine = create_engine(DATABASE_URL)

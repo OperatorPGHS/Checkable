@@ -1,59 +1,86 @@
-from fastapi import FastAPI, Request, Form, Response, Depends
+from fastapi import FastAPI, Form, Request, Response, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
 from passlib.context import CryptContext
+
+from database import SessionLocal
+from models import Base, Student,WeekdayEnum
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# 메모리 임시 DB (학습용, 실제론 DB 사용)
-fake_db = []
+# DB 세션 의존성
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    student_number = request.cookies.get("student_number")
-    student = next((s for s in fake_db if s["student_number"] == student_number), None)
-    if student:
-        return templates.TemplateResponse("index.html", {"request": request, "name": student["name"]})
-    return RedirectResponse("/login")
-
-@app.get("/register", response_class=HTMLResponse)
+# 회원가입 페이지
+@app.get("/register")
 def register_form(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
 
+# 회원가입 처리
 @app.post("/register")
 def register(
-    name: str = Form(...),
+    request: Request,
     student_number: str = Form(...),
+    name: str = Form(...),
     password: str = Form(...),
-    days: list[str] = Form(default=[])
+    days: list[str] = Form(...),
+    db: Session = Depends(get_db)
 ):
     hashed_pw = pwd_context.hash(password)
+
+    # 학번+요일 중복 확인
     for day in days:
-        fake_db.append({
-            "student_number": student_number,
-            "name": name,
-            "password": hashed_pw,
-            "day": day
-        })
+        exists = db.query(Student).filter_by(student_number=student_number, day=day).first()
+        if exists:
+            return HTMLResponse(f"<h3>{student_number}의 {day}요일은 이미 등록되어 있습니다.</h3>", status_code=400)
+
+    # 데이터 삽입
+    for day in days:
+        new_entry = Student(
+            student_number=student_number,
+            name=name,
+            password=hashed_pw,
+            day=WeekdayEnum(day)
+        )
+        db.add(new_entry)
+    db.commit()
+
     return RedirectResponse("/login", status_code=302)
 
-@app.get("/login", response_class=HTMLResponse)
+# 로그인 페이지
+@app.get("/login")
 def login_form(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+# 로그인 처리
 @app.post("/login")
-def login(response: Response, student_number: str = Form(...), password: str = Form(...)):
-    student = next((s for s in fake_db if s["student_number"] == student_number), None)
-    if student and pwd_context.verify(password, student["password"]):
-        response = RedirectResponse("/", status_code=302)
-        response.set_cookie("student_number", student_number)
-        return response
-    return HTMLResponse("<h3>로그인 실패</h3><a href='/login'>다시 시도</a>", status_code=401)
+def login(
+    response: Response,
+    student_number: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    students = db.query(Student).filter_by(student_number=student_number).all()
+    if not students:
+        return HTMLResponse("<h3>학번이 존재하지 않습니다.</h3>", status_code=401)
 
-@app.get("/logout")
-def logout():
-    response = RedirectResponse("/login", status_code=302)
-    response.delete_cookie("student_number")
-    return response
+    if pwd_context.verify(password, students[0].password):
+        res = RedirectResponse("/", status_code=302)
+        res.set_cookie("student_number", student_number)
+        return res
+
+    return HTMLResponse("<h3>비밀번호가 틀렸습니다.</h3>", status_code=401)
+
+# 홈
+@app.get("/")
+def home(request: Request):
+    name = request.cookies.get("student_number")
+    return templates.TemplateResponse("index.html", {"request": request, "name": name})
